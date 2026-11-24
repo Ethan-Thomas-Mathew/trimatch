@@ -8,7 +8,7 @@ dependencies = [
     "uvicorn[standard]>=0.32",
     "pydantic>=2.9",
     "pydantic-settings>=2.6",
-    "sqlalchemy>=2.0.36",
+    "sqlalchemy>=2.0.36,<2.1",
     "alembic>=1.14",
     "psycopg[binary]>=3.2",
     "anthropic>=0.40",
@@ -25,6 +25,8 @@ dev = [
     "ruff>=0.8",
     "mypy>=1.13",
     "pre-commit>=4.0",
+    "reportlab>=5.1.0",
+    "pypdfium2>=5.15.2",
 ]
 
 [build-system]
@@ -36,6 +38,7 @@ packages = ["app"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+pythonpath = [".", "../scripts"]
 asyncio_mode = "auto"
 asyncio_default_fixture_loop_scope = "function"
 addopts = "-ra --strict-markers"
@@ -49,13 +52,6 @@ branch = true
 
 [tool.coverage.report]
 show_missing = true
-
-[tool.ruff]
-line-length = 100
-target-version = "py312"
-
-[tool.ruff.lint]
-select = ["E", "F", "I", "B", "UP", "SIM", "RUF", "C4", "PT"]
 
 [tool.mypy]
 python_version = "3.12"

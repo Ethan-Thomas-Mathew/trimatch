@@ -1,0 +1,12 @@
+# One ruff config for the whole repo (backend, scripts, evals).
+line-length = 100
+target-version = "py312"
+src = ["backend", "scripts", "evals"]
+
+[lint]
+select = ["E", "F", "I", "B", "UP", "SIM", "RUF", "C4", "PT"]
+
+[lint.isort]
+known-first-party = ["app", "world", "render", "generate_dataset", "seed"]
+# backend/alembic/ is a migrations folder, not the library; keep the import grouped as 3rd party.
+known-third-party = ["alembic"]
