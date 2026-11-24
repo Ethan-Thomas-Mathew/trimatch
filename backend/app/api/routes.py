@@ -302,18 +302,16 @@ def review_invoice(
 # --------------------------------------------------------------------------- metrics
 @router.get("/metrics", response_model=Metrics)
 def get_metrics(session: SessionDep) -> Metrics:
-    # ``.all()`` first: dict() on the raw Result would treat it as a mapping.
-    by_status = dict(
-        session.execute(select(Invoice.status, func.count()).group_by(Invoice.status)).all()  # type: ignore[arg-type]
-    )
+    # Explicit rows and typed dicts: dict() on the raw Result would treat it as a mapping.
+    status_rows = session.execute(select(Invoice.status, func.count()).group_by(Invoice.status))
+    by_status: dict[str, int] = {str(name): int(n) for name, n in status_rows.all()}
     latest = select(func.max(DecisionRecord.id)).group_by(DecisionRecord.invoice_id)
-    by_decision = dict(
-        session.execute(
-            select(DecisionRecord.decision, func.count())
-            .where(DecisionRecord.id.in_(latest))
-            .group_by(DecisionRecord.decision)
-        ).all()  # type: ignore[arg-type]
+    decision_rows = session.execute(
+        select(DecisionRecord.decision, func.count())
+        .where(DecisionRecord.id.in_(latest))
+        .group_by(DecisionRecord.decision)
     )
+    by_decision: dict[str, int] = {str(name): int(n) for name, n in decision_rows.all()}
     runs = session.execute(
         select(
             func.coalesce(func.sum(ExtractionRun.cost_usd), 0),
