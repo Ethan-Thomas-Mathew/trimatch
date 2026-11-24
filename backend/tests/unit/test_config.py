@@ -28,3 +28,20 @@ def test_min_confidence_must_be_a_probability(monkeypatch: pytest.MonkeyPatch) -
     monkeypatch.setenv("MIN_CONFIDENCE", "1.5")
     with pytest.raises(ValidationError):
         Settings(_env_file=None)
+
+
+def test_usd_to_inr_is_unset_by_default_and_a_blank_value_means_unset(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    assert Settings(_env_file=None).usd_to_inr is None
+    monkeypatch.setenv("USD_TO_INR", "")  # what docker-compose passes when it is not set
+    assert Settings(_env_file=None).usd_to_inr is None
+    monkeypatch.setenv("USD_TO_INR", "84.5")
+    assert Settings(_env_file=None).usd_to_inr == Decimal("84.5")
+
+
+@pytest.mark.parametrize("bad", ["0", "-3", "abc"])
+def test_usd_to_inr_must_be_a_positive_number(monkeypatch: pytest.MonkeyPatch, bad: str) -> None:
+    monkeypatch.setenv("USD_TO_INR", bad)
+    with pytest.raises(ValidationError):
+        Settings(_env_file=None)

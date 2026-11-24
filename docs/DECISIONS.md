@@ -170,3 +170,15 @@ Each entry: **Decision → Alternatives considered → Why this one → Trade-of
 - **Alternatives:** Publish the API directly with CORS.
 - **Why:** One origin means no CORS surface and credentials never cross sites.
 - **Trade-off:** The container reaches the host's Ollama through `host.docker.internal`, which is not loopback, so the container sets `ALLOW_REMOTE_LLM=true`. That is deliberate and documented: the host is this machine.
+
+## D-029: A rejected invoice can be approved later (supersedes part of D-026)
+- **Decision:** `REJECTED` invoices can be approved by a reviewer, with a comment. If a *person* rejected it, that is all that is needed. If the *rules engine* rejected it (an exact duplicate or a malformed GSTIN), the request must also include `acknowledge_override=true`, the UI shows the reasons and requires a ticked checkbox, and the action is stored as `approve_override` with the overridden reason codes in the audit log. A rejected invoice still cannot be rejected again, and an approved, auto-approved or processing invoice cannot be reviewed.
+- **Alternatives:** Keep rejections final (D-026); allow override with no extra step; a separate "reopen" state.
+- **Why:** The user needs to correct a mistaken or outdated rejection (for example after the supplier sends a credit note). The rules engine's rejections are the cases where approving risks paying twice or paying a non-existent supplier, so the override is allowed but must be deliberate, explicit and visible in the history rather than accidental.
+- **Trade-off:** The one-way safety of D-026 is relaxed. The guard is now a conscious acknowledgement plus a permanent audit record, not a hard block. The decision history is append-only, so the original rejection is never lost.
+
+## D-030: Average cost is shown in rupees using a rate you configure, never a guessed one
+- **Decision:** The Metrics page shows the average model cost in ₹. A cost of zero is ₹0.00 with no rate needed (the normal case with a local model). A non-zero cost is converted with `USD_TO_INR`, which has no default; without it the page shows the dollar figure and says to set the rate.
+- **Alternatives:** Hard-code a rate; fetch a live rate from the internet.
+- **Why:** An exchange rate changes and I cannot know today's; a stale hard-coded rate would look authoritative and be wrong. A live lookup would add an outbound network call to a system that is otherwise local-only.
+- **Trade-off:** One more setting to maintain if a paid model is ever used. The database still stores cost in USD, as the plan specifies.

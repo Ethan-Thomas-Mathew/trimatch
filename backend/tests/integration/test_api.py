@@ -297,29 +297,104 @@ def test_a_comment_is_required(client: TestClient, env: Env) -> None:
     assert detail(client, invoice_id)["status"] == "NEEDS_REVIEW"  # nothing changed
 
 
-def test_an_invoice_cannot_be_reviewed_twice(client: TestClient, env: Env) -> None:
-    invoice_id = _needs_review(client, env, "possible_duplicate")
-    ok = {"action": "reject", "comment": "Looks like a duplicate."}
-    assert client.post(f"/invoices/{invoice_id}/review", json=ok, auth=AUTH).status_code == 200
-    again = client.post(
+def _review(client: TestClient, invoice_id: int, action: str, comment: str, **extra: Any) -> Any:
+    return client.post(
         f"/invoices/{invoice_id}/review",
-        json={"action": "approve", "comment": "changed my mind"},
+        json={"action": action, "comment": comment, **extra},
         auth=AUTH,
     )
+
+
+def test_a_decided_invoice_cannot_be_decided_the_same_way_twice(
+    client: TestClient, env: Env
+) -> None:
+    invoice_id = _needs_review(client, env, "possible_duplicate")
+    assert _review(client, invoice_id, "reject", "Looks like a duplicate.").status_code == 200
+    again = _review(client, invoice_id, "reject", "still a duplicate")
     assert again.status_code == 409
+    assert "can only be approved" in again.json()["detail"]
     assert detail(client, invoice_id)["status"] == "REJECTED"
 
 
-def test_a_policy_rejection_cannot_be_overridden_by_approving(client: TestClient, env: Env) -> None:
+def test_a_human_rejected_invoice_can_be_approved_later(client: TestClient, env: Env) -> None:
+    invoice_id = _needs_review(client, env, "price_mismatch")
+    assert _review(client, invoice_id, "reject", "Price looks wrong.").status_code == 200
+
+    later = _review(client, invoice_id, "approve", "Supplier sent a credit note; price is fine.")
+    assert later.status_code == 200, later.text  # no acknowledgement needed: a person rejected it
+    body = later.json()
+    assert body["status"] == "APPROVED"
+    assert body["decision"]["decision"] == "APPROVE"
+    assert body["decision"]["decided_by"] == "human"
+    assert [r["action"] for r in body["reviews"]] == ["reject", "approve_override"]
+
+    with Session(env.engine) as s:
+        event = s.scalars(
+            select(AuditLog).where(
+                AuditLog.entity_id == invoice_id, AuditLog.action == "review_approve_override"
+            )
+        ).one()
+        assert event.payload["reversal"] is True
+        assert event.payload["previous_status"] == "REJECTED"
+        assert event.payload["overrode_policy_reasons"] == []
+        decisions = s.scalars(
+            select(DecisionRecord).where(DecisionRecord.invoice_id == invoice_id)
+        ).all()
+        assert [d.decided_by for d in decisions] == ["policy", "human", "human"]  # full history
+
+    # Once approved it is done: it cannot be approved or rejected again.
+    assert _review(client, invoice_id, "approve", "again").status_code == 409
+    assert _review(client, invoice_id, "reject", "again").status_code == 409
+
+
+def test_overriding_a_rules_engine_rejection_needs_an_explicit_acknowledgement(
+    client: TestClient, env: Env
+) -> None:
     pdf, _ = dataset_invoice(env, scenario="gstin_invalid_format")
-    created = upload(client, pdf)
-    assert detail(client, created["id"])["status"] == "REJECTED"
-    r = client.post(
-        f"/invoices/{created['id']}/review",
-        json={"action": "approve", "comment": "please"},
-        auth=AUTH,
-    )
+    invoice_id = upload(client, pdf)["id"]
+    assert detail(client, invoice_id)["status"] == "REJECTED"
+
+    for extra in ({}, {"acknowledge_override": False}):
+        refused = _review(client, invoice_id, "approve", "please", **extra)
+        assert refused.status_code == 409
+        assert "rules engine rejected" in refused.json()["detail"]
+    assert detail(client, invoice_id)["status"] == "REJECTED"  # nothing changed
+
+    ok = _review(
+        client, invoice_id, "approve", "Supplier confirmed their GSTIN by phone.",
+        acknowledge_override=True,
+    )  # fmt: skip
+    assert ok.status_code == 200, ok.text
+    assert ok.json()["status"] == "APPROVED"
+    with Session(env.engine) as s:
+        event = s.scalars(
+            select(AuditLog).where(
+                AuditLog.entity_id == invoice_id, AuditLog.action == "review_approve_override"
+            )
+        ).one()
+        assert "gstin_format" in event.payload["overrode_policy_reasons"]
+
+
+def test_the_acknowledgement_does_not_let_you_reject_a_rejected_invoice(
+    client: TestClient, env: Env
+) -> None:
+    pdf, _ = dataset_invoice(env, scenario="exact_duplicate")
+    invoice_id = upload(client, pdf)["id"]
+    r = _review(client, invoice_id, "reject", "x", acknowledge_override=True)
     assert r.status_code == 409
+
+
+def test_a_duplicate_can_be_overridden_only_with_acknowledgement(
+    client: TestClient, env: Env
+) -> None:
+    pdf, _ = dataset_invoice(env, scenario="exact_duplicate")
+    invoice_id = upload(client, pdf)["id"]
+    assert detail(client, invoice_id)["status"] == "REJECTED"
+    assert _review(client, invoice_id, "approve", "ok").status_code == 409
+    assert (
+        _review(client, invoice_id, "approve", "Original was voided.", acknowledge_override=True)
+        .status_code == 200
+    )  # fmt: skip
 
 
 def test_an_auto_approved_invoice_cannot_be_reviewed(client: TestClient, env: Env) -> None:
@@ -359,4 +434,5 @@ def test_metrics_add_up(client: TestClient, env: Env) -> None:
     )
     assert m["by_decision"].get("APPROVE", 0) >= 1  # a human approval from the tests above
     assert m["avg_cost_usd"] == 0
+    assert m["avg_cost_inr"] == 0  # zero needs no exchange rate
     assert m["avg_pipeline_seconds"] > 0

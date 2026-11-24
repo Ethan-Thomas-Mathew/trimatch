@@ -126,7 +126,7 @@ docs/                    ARCHITECTURE, DECISIONS, LEARNING, DEPLOY
 - **mypy has not been run on the author's Windows machine** (a system policy blocks its compiled files); it runs in CI.
 - **Tax-free invoices always go to review** because the tax type cannot be verified (D-019).
 - **Vendor resolution** is by GSTIN, then exact name; a wrong-but-real GSTIN resolves to the other vendor and is then caught by the PO-vendor check.
-- **A human may approve any invoice that needs review**, but never one the policy rejected (duplicates, malformed GSTIN).
+- **A rejected invoice can be approved later.** A reviewer's rejection can be reversed with a comment. An invoice the *rules engine* rejected (a duplicate or malformed GSTIN) can also be approved, but only with an explicit acknowledgement, and it is recorded as an override in the audit trail (D-029). Nothing else can be re-reviewed.
 - **Local models are slower** than hosted ones: the LLM timeout defaults to 120 s rather than the plan's 30 s (D-011).
 - **One reviewer account, HTTP Basic over plain HTTP**: acceptable on `127.0.0.1`, **not** for a network deployment without TLS in front (see `docs/DEPLOY.md`).
 

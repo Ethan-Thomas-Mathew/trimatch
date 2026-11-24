@@ -110,6 +110,7 @@ export interface Metrics {
   by_decision: Record<string, number>;
   awaiting_review: number;
   avg_cost_usd: number;
+  avg_cost_inr: number | null; // null: a real cost exists but no USD_TO_INR rate is configured
   avg_extraction_latency_ms: number;
   avg_pipeline_seconds: number;
 }

@@ -3,7 +3,14 @@ import { test } from "node:test";
 
 import { basicAuthHeader } from "./auth.ts";
 import { describeError } from "./errors.ts";
-import { checkLabel, confidenceLevel, formatMoney, formatQty, statusLabel } from "./format.ts";
+import {
+  checkLabel,
+  confidenceLevel,
+  formatCostInr,
+  formatMoney,
+  formatQty,
+  statusLabel,
+} from "./format.ts";
 
 test("money uses Indian digit grouping and always shows paise", () => {
   assert.equal(formatMoney("1234567.5"), "₹12,34,567.50");
@@ -13,6 +20,14 @@ test("money uses Indian digit grouping and always shows paise", () => {
 
 test("missing or junk money renders as a dash instead of NaN", () => {
   for (const v of [null, undefined, "", "abc", "NaN"]) assert.equal(formatMoney(v as string), "—");
+});
+
+test("average cost is shown in rupees, and never as a guessed conversion", () => {
+  assert.equal(formatCostInr(0, 0), "₹0.00");
+  assert.equal(formatCostInr(1.7, 0.02), "₹1.70");
+  assert.equal(formatCostInr(0.0425, 0.0005), "₹0.0425");
+  // A real cost with no configured rate: say so instead of inventing a number.
+  assert.equal(formatCostInr(null, 0.02), "$0.0200 (set USD_TO_INR to see rupees)");
 });
 
 test("quantities drop trailing zeros", () => {

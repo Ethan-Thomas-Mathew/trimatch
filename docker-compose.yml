@@ -67,6 +67,7 @@ services:
       # Empty = a random password is generated and printed once in `docker compose logs backend`.
       REVIEWER_PASSWORD: ${REVIEWER_PASSWORD:-}
       CORS_ORIGINS: http://127.0.0.1:8080,http://localhost:8080
+      USD_TO_INR: ${USD_TO_INR:-}
       SEED_DEMO_DATA: ${SEED_DEMO_DATA:-true}
     extra_hosts:
       - "host.docker.internal:host-gateway"

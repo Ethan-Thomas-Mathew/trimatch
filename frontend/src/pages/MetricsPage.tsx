@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 
 import { api } from "../api.ts";
-import { statusLabel } from "../lib/format.ts";
+import { formatCostInr, statusLabel } from "../lib/format.ts";
 import type { Metrics } from "../types.ts";
 
 function Stat({ label, value, hint }: { label: string; value: string; hint?: string }) {
@@ -70,7 +70,7 @@ export function MetricsPage() {
         />
         <Stat
           label="Average cost per invoice"
-          value={`$${m.avg_cost_usd.toFixed(4)}`}
+          value={formatCostInr(m.avg_cost_inr, m.avg_cost_usd)}
           hint="local models cost nothing per call"
         />
       </div>

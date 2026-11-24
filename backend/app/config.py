@@ -11,7 +11,7 @@ from functools import lru_cache
 from typing import Literal
 from urllib.parse import urlparse
 
-from pydantic import Field, model_validator
+from pydantic import Field, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -56,6 +56,12 @@ class Settings(BaseSettings):
     max_upload_mb: int = 10
     upload_dir: str = "../data/uploads"
 
+    # --- Display ---
+    # USD to INR rate used only to show the average model cost in rupees on the Metrics page.
+    # Deliberately unset by default: set it yourself (e.g. USD_TO_INR=85). With a local model the
+    # cost is zero, which needs no rate.
+    usd_to_inr: Decimal | None = Field(default=None, gt=0)
+
     # --- API ---
     reviewer_username: str = "reviewer"
     # Empty means "generate a random password at startup and log it once" (secure by default).
@@ -66,6 +72,12 @@ class Settings(BaseSettings):
     langfuse_host: str = "http://127.0.0.1:3000"
     langfuse_public_key: str = ""
     langfuse_secret_key: str = ""
+
+    @field_validator("usd_to_inr", mode="before")
+    @classmethod
+    def _blank_rate_means_unset(cls, value: object) -> object:
+        # docker-compose passes an empty string when the variable is not set.
+        return None if isinstance(value, str) and not value.strip() else value
 
     @model_validator(mode="after")
     def _llm_host_must_be_local(self) -> Settings:

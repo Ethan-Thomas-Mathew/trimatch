@@ -25,6 +25,12 @@ function isScored(v: unknown): v is ScoredField {
   return typeof v === "object" && v !== null && "confidence" in v;
 }
 
+const REVIEW_VERB: Record<string, string> = {
+  approve: "approved",
+  reject: "rejected",
+  approve_override: "approved later (reversing the rejection)",
+};
+
 const CONFIDENCE_STYLE = {
   high: "bg-emerald-100 text-emerald-800",
   medium: "bg-amber-100 text-amber-800",
@@ -98,6 +104,7 @@ export function Detail() {
   const failed = inv.checks.filter((c) => !c.passed);
   const passed = inv.checks.filter((c) => c.passed);
   const reviewable = inv.status === "NEEDS_REVIEW" || inv.status === "FAILED";
+  const rejectedByRules = inv.status === "REJECTED" && inv.decision?.decided_by === "policy";
 
   return (
     <div className="space-y-4">
@@ -222,6 +229,14 @@ export function Detail() {
           )}
 
           {reviewable && <ReviewForm id={inv.id} onDone={setInv} />}
+          {inv.status === "REJECTED" && (
+            <ApproveLaterForm
+              id={inv.id}
+              byRules={rejectedByRules}
+              reasons={inv.decision?.reasons ?? []}
+              onDone={setInv}
+            />
+          )}
 
           {inv.reviews.length > 0 && (
             <section aria-label="Review history" className="card p-4">
@@ -229,7 +244,7 @@ export function Detail() {
               <ul className="space-y-2 text-sm">
                 {inv.reviews.map((r, i) => (
                   <li key={i}>
-                    <strong>{r.reviewer}</strong> {r.action === "approve" ? "approved" : "rejected"} on{" "}
+                    <strong>{r.reviewer}</strong> {REVIEW_VERB[r.action] ?? r.action} on{" "}
                     {new Date(r.created_at).toLocaleString()}: “{r.comment}”
                   </li>
                 ))}
@@ -368,6 +383,103 @@ function ReviewForm({ id, onDone }: { id: number; onDone: (inv: InvoiceDetail) =
           Reject
         </button>
       </div>
+    </form>
+  );
+}
+
+/** Approve an invoice that was rejected earlier. A rejection by the rules engine (a duplicate or
+ * a malformed GSTIN) needs an explicit acknowledgement, because approving it can mean paying
+ * twice or paying a supplier that does not exist. */
+function ApproveLaterForm({
+  id,
+  byRules,
+  reasons,
+  onDone,
+}: {
+  id: number;
+  byRules: boolean;
+  reasons: { code: string; message: string }[];
+  onDone: (inv: InvoiceDetail) => void;
+}) {
+  const [comment, setComment] = useState("");
+  const [acknowledged, setAcknowledged] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  async function approve() {
+    if (!comment.trim()) {
+      setError("A comment is required.");
+      return;
+    }
+    setBusy(true);
+    setError(null);
+    try {
+      onDone(await api.review(id, "approve", comment.trim(), acknowledged));
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Could not save your decision.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <form
+      aria-label="Approve later"
+      className="card space-y-3 border-slate-400 p-4"
+      onSubmit={(e: FormEvent) => e.preventDefault()}
+    >
+      <h2 className="text-sm font-semibold">Approve this invoice later</h2>
+      <p className="text-sm text-slate-600">
+        {byRules
+          ? "The rules engine rejected this invoice. You can still approve it, but it is recorded as an override."
+          : "This invoice was rejected by a reviewer. You can reverse that and approve it."}
+      </p>
+      {byRules && (
+        <div className="rounded-md border border-rose-300 bg-rose-50 p-3 text-sm">
+          <div className="font-medium text-rose-800">Why it was rejected</div>
+          <ul className="mt-1 list-disc pl-5">
+            {reasons.map((r, i) => (
+              <li key={i}>{r.message}</li>
+            ))}
+          </ul>
+          <label className="mt-3 flex items-start gap-2">
+            <input
+              type="checkbox"
+              className="mt-1"
+              checked={acknowledged}
+              onChange={(e) => setAcknowledged(e.target.checked)}
+            />
+            <span>
+              I understand why it was rejected, and that approving it may cause a duplicate or
+              invalid payment.
+            </span>
+          </label>
+        </div>
+      )}
+      <div>
+        <label htmlFor="later-comment" className="block text-sm">
+          Comment <span className="text-rose-600">(required)</span>
+        </label>
+        <textarea
+          id="later-comment"
+          className="mt-1 w-full rounded-md border border-slate-300 p-2 text-sm"
+          rows={3}
+          maxLength={2000}
+          value={comment}
+          onChange={(e) => setComment(e.target.value)}
+        />
+      </div>
+      <div role="alert" aria-live="polite" className="min-h-5 text-sm text-rose-700">
+        {error}
+      </div>
+      <button
+        type="button"
+        className="btn-approve"
+        disabled={busy || (byRules && !acknowledged)}
+        onClick={() => void approve()}
+      >
+        Approve anyway
+      </button>
     </form>
   );
 }

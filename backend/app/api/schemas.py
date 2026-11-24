@@ -101,6 +101,8 @@ class ReviewRequest(BaseModel):
 
     action: Literal["approve", "reject"]
     comment: str = Field(max_length=2000)
+    # Required only to approve an invoice the rules engine rejected (duplicate, bad GSTIN).
+    acknowledge_override: bool = False
 
     @field_validator("comment")
     @classmethod
@@ -117,5 +119,7 @@ class Metrics(BaseModel):
     by_decision: dict[str, int]
     awaiting_review: int
     avg_cost_usd: float
+    # Average cost in rupees. ``None`` when a cost exists but no USD_TO_INR rate is configured.
+    avg_cost_inr: float | None
     avg_extraction_latency_ms: float
     avg_pipeline_seconds: float

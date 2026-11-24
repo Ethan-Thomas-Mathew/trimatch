@@ -11,6 +11,7 @@ from sqlalchemy import Numeric, cast, func, select
 from sqlalchemy.orm import Session
 
 from app.api.deps import ProviderDep, ReviewerDep, SessionDep, SettingsDep, require_reviewer
+from app.api.money import cost_in_inr
 from app.api.schemas import (
     CheckOut,
     DecisionOut,
@@ -263,22 +264,50 @@ def get_invoice_file(invoice_id: int, session: SessionDep, settings: SettingsDep
 def review_invoice(
     invoice_id: int, body: ReviewRequest, session: SessionDep, reviewer: ReviewerDep
 ) -> InvoiceDetail:
-    """A human approves or rejects an invoice that needs review. A comment is required."""
+    """A human approves or rejects an invoice. A comment is required.
+
+    - NEEDS_REVIEW / FAILED: approve or reject.
+    - REJECTED: approve later (reverse the rejection). If the RULES ENGINE rejected it (a
+      duplicate or malformed GSTIN), the request must also carry ``acknowledge_override=true``.
+    - Anything else (already approved, auto-approved, still processing): 409.
+    """
     invoice = session.execute(
         select(Invoice).where(Invoice.id == invoice_id).with_for_update()  # no double reviews
     ).scalar_one_or_none()
     if invoice is None:
         raise HTTPException(404, "Invoice not found.")
-    if invoice.status not in REVIEWABLE:
-        raise HTTPException(
-            409, f"This invoice is {invoice.status} and cannot be reviewed. Only invoices that "
-            "need review can be approved or rejected."
-        )  # fmt: skip
 
     approved = body.action == "approve"
+    previous_status = invoice.status
+    override_reasons: list[str] = []
+    is_reversal = previous_status == str(InvoiceStatus.REJECTED)
+
+    if previous_status in REVIEWABLE:
+        pass
+    elif is_reversal and approved:
+        latest = _latest_decision(session, invoice.id)
+        if latest is not None and latest.decided_by == str(DecidedBy.POLICY):
+            # The rules engine rejected this: a duplicate or a malformed GSTIN. Approving it can
+            # mean paying twice or paying a non-existent supplier, so it needs a deliberate yes.
+            override_reasons = [str(r.get("code", "")) for r in latest.reasons]
+            if not body.acknowledge_override:
+                raise HTTPException(
+                    409,
+                    "The rules engine rejected this invoice. To approve it anyway, confirm that "
+                    "you understand the reasons (acknowledge_override).",
+                )
+    else:
+        hint = (
+            " A rejected invoice can only be approved, not rejected again."
+            if is_reversal
+            else " Only invoices that need review, or rejected ones, can be reviewed."
+        )
+        raise HTTPException(409, f"This invoice is {invoice.status}.{hint}")
+
+    action_name = "approve_override" if (is_reversal and approved) else body.action
     session.add(
         ReviewAction(
-            invoice_id=invoice.id, reviewer=reviewer, action=body.action, comment=body.comment
+            invoice_id=invoice.id, reviewer=reviewer, action=action_name, comment=body.comment
         )
     )
     session.add(
@@ -292,8 +321,14 @@ def review_invoice(
     )
     invoice.status = str(InvoiceStatus.APPROVED if approved else InvoiceStatus.REJECTED)
     audit(
-        session, "invoice", invoice.id, f"review_{body.action}", reviewer,
-        {"comment": body.comment, "new_status": invoice.status},
+        session, "invoice", invoice.id, f"review_{action_name}", reviewer,
+        {
+            "comment": body.comment,
+            "previous_status": previous_status,
+            "new_status": invoice.status,
+            "reversal": is_reversal,
+            "overrode_policy_reasons": override_reasons,
+        },
     )  # fmt: skip
     session.flush()
     return build_detail(session, invoice)
@@ -301,7 +336,7 @@ def review_invoice(
 
 # --------------------------------------------------------------------------- metrics
 @router.get("/metrics", response_model=Metrics)
-def get_metrics(session: SessionDep) -> Metrics:
+def get_metrics(session: SessionDep, settings: SettingsDep) -> Metrics:
     # Explicit rows and typed dicts: dict() on the raw Result would treat it as a mapping.
     status_rows = session.execute(select(Invoice.status, func.count()).group_by(Invoice.status))
     by_status: dict[str, int] = {str(name): int(n) for name, n in status_rows.all()}
@@ -324,12 +359,15 @@ def get_metrics(session: SessionDep) -> Metrics:
             func.coalesce(func.avg(cast(AuditLog.payload["total_ms"].astext, Numeric)), 0)
         ).where(AuditLog.action == "decision", AuditLog.payload.has_key("total_ms"))
     )
+    avg_usd = float(runs[0] / runs[1]) if runs[1] else 0.0
+    avg_inr = cost_in_inr(avg_usd, settings.usd_to_inr)
     return Metrics(
         invoices=sum(by_status.values()),
         by_status=by_status,
         by_decision=by_decision,
         awaiting_review=by_status.get("NEEDS_REVIEW", 0) + by_status.get("FAILED", 0),
-        avg_cost_usd=float(runs[0] / runs[1]) if runs[1] else 0.0,
+        avg_cost_usd=avg_usd,
+        avg_cost_inr=avg_inr,
         avg_extraction_latency_ms=float(runs[2]),
         avg_pipeline_seconds=float(avg_ms or 0) / 1000,
     )

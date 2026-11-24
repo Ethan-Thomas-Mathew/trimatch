@@ -62,11 +62,16 @@ export const api = {
     return json<{ id: number; status: string }>("/invoices", { method: "POST", body: form });
   },
 
-  review: (id: number, action: "approve" | "reject", comment: string) =>
+  review: (
+    id: number,
+    action: "approve" | "reject",
+    comment: string,
+    acknowledgeOverride = false,
+  ) =>
     json<InvoiceDetail>(`/invoices/${id}/review`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ action, comment }),
+      body: JSON.stringify({ action, comment, acknowledge_override: acknowledgeOverride }),
     }),
 
   /** The PDF needs the Authorization header, so it is fetched and shown from a blob URL. */

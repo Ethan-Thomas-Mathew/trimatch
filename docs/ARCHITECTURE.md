@@ -92,7 +92,7 @@ Tools run in a `READ ONLY` transaction on their own session; the pipeline writes
 
 ## Review workflow (Phase 6)
 
-`NEEDS_REVIEW` and `FAILED` invoices can be approved or rejected by a reviewer with a mandatory comment. That writes a `review_actions` row, a new `decisions` row (`decided_by=human`, kept alongside the policy's), the new status and an audit event, under a row lock. A policy `REJECTED` invoice cannot be approved through the API.
+`NEEDS_REVIEW` and `FAILED` invoices can be approved or rejected by a reviewer with a mandatory comment. A `REJECTED` invoice can be approved later (action `approve_override`); if the rules engine made the rejection, the request must also carry `acknowledge_override`. Each decision writes a `review_actions` row, a new `decisions` row (`decided_by=human`, kept alongside the earlier ones), the new status and an audit event (with `previous_status`, `reversal` and any overridden policy reasons), under a row lock. Approved, auto-approved and processing invoices cannot be reviewed.
 
 ## Deployment shape (Phase 7)
 

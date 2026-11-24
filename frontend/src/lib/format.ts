@@ -9,6 +9,15 @@ export function formatMoney(value: string | null | undefined): string {
   return "₹" + n.toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 }
 
+/** Average cost for the Metrics page, in rupees. Never shows a made-up conversion. */
+export function formatCostInr(inr: number | null, usd: number): string {
+  if (inr !== null) {
+    // Costs can be a fraction of a rupee, so show more precision than for invoice amounts.
+    return "₹" + inr.toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 4 });
+  }
+  return `$${usd.toFixed(4)} (set USD_TO_INR to see rupees)`;
+}
+
 export function formatQty(value: string | null | undefined): string {
   if (value === null || value === undefined || value === "") return "—";
   const n = Number(value);
