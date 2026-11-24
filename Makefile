@@ -1,4 +1,4 @@
-.PHONY: up down test lint fmt typecheck eval seed migrate dataset
+.PHONY: up down test lint fmt typecheck eval eval-sim seed migrate dataset
 
 UV ?= uv
 
@@ -31,6 +31,10 @@ seed: migrate
 dataset:
 	cd backend && $(UV) run python ../scripts/generate_dataset.py
 
-# Phase 5 target: wired up when evals/run_eval.py exists.
+# Live evaluation with a real local model (needs Ollama). Writes evals/report.md.
 eval:
 	cd backend && $(UV) run python ../evals/run_eval.py
+
+# Pipeline check with a SIMULATED model (no LLM needed). Writes evals/report.oracle.md.
+eval-sim:
+	cd backend && $(UV) run python ../evals/run_eval.py --provider oracle
