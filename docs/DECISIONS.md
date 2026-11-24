@@ -62,11 +62,11 @@ Each entry: **Decision → Alternatives considered → Why this one → Trade-of
 - **Why:** It exercises the real migration and Postgres-specific features (JSONB, check constraints) without touching dev data. CI provides Postgres as a service; an unreachable database fails CI but only skips locally.
 - **Trade-off:** Needs Docker locally to run these tests.
 
-## D-011: Local LLM only, no API keys anywhere (deviates from the plan's "Anthropic SDK")
-- **Decision:** The project has no API-key setting and no hosted-LLM dependency. Extraction talks to a local Ollama server (`LLM_PROVIDER=ollama`) or replays recorded answers (`LLM_PROVIDER=replay`). The `anthropic` package was removed.
-- **Alternatives:** Anthropic SDK with a spend-capped key (the original plan); a provider interface with Claude as one option.
+## D-011: Local LLM only, no API keys anywhere (deviates from the plan's hosted-model SDK)
+- **Decision:** The project has no API-key setting and no hosted-LLM dependency. Extraction talks to a local Ollama server (`LLM_PROVIDER=ollama`) or replays recorded answers (`LLM_PROVIDER=replay`). The hosted-model client package the plan called for was never kept as a dependency.
+- **Alternatives:** A hosted-model SDK with a spend-capped key (the original plan); a provider interface with a hosted model as one option.
 - **Why:** The goal was the safest possible setup for a public repository: with no key there is nothing to leak, no bill to run up, and invoice data never leaves the machine. The `LLMProvider` interface keeps the door open: adding a hosted provider later is one new file, with no change to extraction code.
-- **Trade-off:** Local 7B models are less accurate than frontier hosted models, especially on scans, so the plan's accuracy targets (95% digital, 85% scanned) may be missed. Real numbers will be reported either way. The "built on Claude" talking point is replaced by "model-agnostic design".
+- **Trade-off:** Local 7B models are less accurate than frontier hosted models, especially on scans, so the plan's accuracy targets (95% digital, 85% scanned) may be missed. Real numbers will be reported either way. The "built on a hosted frontier model" talking point is replaced by "model-agnostic design".
 
 ## D-012: A remote LLM host is refused unless explicitly allowed
 - **Decision:** Settings validation fails if `OLLAMA_HOST` is not loopback, unless `ALLOW_REMOTE_LLM=true`.
