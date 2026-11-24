@@ -28,7 +28,7 @@ from sqlalchemy import (
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 
-from app.schemas.enums import DecidedBy, Decision
+from app.schemas.enums import HUMAN_APPROVE, DecidedBy, Decision
 
 # A naming convention makes Alembic-generated constraint names stable and readable.
 NAMING_CONVENTION = {
@@ -191,7 +191,10 @@ class MatchResult(Base):
 class DecisionRecord(Base):
     __tablename__ = "decisions"
     __table_args__ = (
-        CheckConstraint(f"decision IN ({_sql_in([d.value for d in Decision])})", name="decision"),
+        CheckConstraint(
+            f"decision IN ({_sql_in([*(d.value for d in Decision), HUMAN_APPROVE])})",
+            name="decision",
+        ),
         CheckConstraint(
             f"decided_by IN ({_sql_in([d.value for d in DecidedBy])})", name="decided_by"
         ),

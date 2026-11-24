@@ -14,6 +14,10 @@ class Decision(StrEnum):
     REJECT = "REJECT"
 
 
+# Stored in decisions.decision when a reviewer approves (with decided_by="human").
+HUMAN_APPROVE = "APPROVE"
+
+
 class DecidedBy(StrEnum):
     POLICY = "policy"
     HUMAN = "human"

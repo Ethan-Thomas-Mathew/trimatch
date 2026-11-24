@@ -9,63 +9,26 @@ from __future__ import annotations
 
 import json
 from collections import Counter
-from collections.abc import Iterator
 from dataclasses import dataclass
-from pathlib import Path
 from typing import Any
 
 import pytest
-from sqlalchemy import Engine, func, select, text
+from sqlalchemy import func, select, text
 from sqlalchemy.exc import DBAPIError
 from sqlalchemy.orm import Session
 
 from app.agent.loop import run_agent
 from app.agent.tools import TOOLS, ToolContext, ToolError, execute_tool, read_only_session
-from app.config import Settings, get_settings
+from app.config import get_settings
 from app.db.models import AuditLog, DecisionRecord, Invoice, MatchResult, Vendor
-from app.db.session import get_engine, get_sessionmaker
+from app.db.session import get_sessionmaker
 from app.llm.base import LLMError, LLMRequest, LLMResponse
 from app.pipeline import create_invoice, process_invoice
 from app.schemas.enums import CheckName, InvoiceStatus
-from generate_dataset import generate
 from oracle import OracleProvider
-from world import DEFAULT_SEED, build_world
+from tests.integration.conftest import Env, forget
 
 pytestmark = pytest.mark.integration
-
-
-@dataclass
-class Env:
-    settings: Settings
-    dataset: Path
-    engine: Engine
-
-
-def _clear_caches() -> None:
-    get_settings.cache_clear()
-    get_engine.cache_clear()
-    get_sessionmaker.cache_clear()
-
-
-@pytest.fixture(scope="module")
-def env(
-    migrated_engine: Engine, database_url: str, tmp_path_factory: pytest.TempPathFactory
-) -> Iterator[Env]:
-    from seed import run as seed_run
-
-    seed_run(migrated_engine)
-    root = tmp_path_factory.mktemp("pipeline")
-    dataset = root / "dataset"
-    generate(build_world(DEFAULT_SEED), dataset)
-
-    patch = pytest.MonkeyPatch()
-    patch.setenv("DATABASE_URL", database_url)
-    patch.setenv("UPLOAD_DIR", str(root / "uploads"))
-    patch.setenv("LLM_PROVIDER", "replay")
-    _clear_caches()
-    yield Env(get_settings(), dataset, migrated_engine)
-    patch.undo()
-    _clear_caches()
 
 
 def run_one(env: Env, pdf: bytes, provider: Any) -> int:
@@ -101,22 +64,6 @@ def clean_pdf(env: Env) -> tuple[bytes, dict[str, Any]]:
             forget(env, truth["fields"]["invoice_number"])
             return (env.dataset / truth["pdf"]).read_bytes(), truth
     raise AssertionError("no clean invoice")
-
-
-def forget(env: Env, invoice_number: str) -> None:
-    """Remove earlier copies of a dataset invoice so a test can process the same PDF again
-    without the pipeline (correctly) rejecting it as a duplicate of itself."""
-    with Session(env.engine) as s, s.begin():
-        ids = "SELECT id FROM invoices WHERE invoice_number = :n AND file_path IS NOT NULL"
-        for table in ("invoice_lines", "extraction_runs", "match_results", "decisions",
-                      "review_actions"):  # fmt: skip
-            s.execute(
-                text(f"DELETE FROM {table} WHERE invoice_id IN ({ids})"), {"n": invoice_number}
-            )
-        s.execute(
-            text("DELETE FROM invoices WHERE invoice_number = :n AND file_path IS NOT NULL"),
-            {"n": invoice_number},
-        )
 
 
 @dataclass
