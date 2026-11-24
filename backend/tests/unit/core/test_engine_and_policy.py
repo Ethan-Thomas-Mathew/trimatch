@@ -12,6 +12,7 @@ from app.core.policy import (
     AGENT_STEP_LIMIT,
     CHECK_NOT_RUN,
     CONFIDENCE_UNKNOWN,
+    LLM_UNAVAILABLE,
     LOW_CONFIDENCE,
     OVER_LIMIT,
     TOTAL_UNKNOWN,
@@ -191,6 +192,18 @@ def test_missing_po_is_explained_once_not_with_three_skipped_checks() -> None:
     d = decision(run(po=None))
     assert d.decision is Decision.NEEDS_REVIEW
     assert [r.code for r in d.reasons] == [str(CheckName.PO_EXISTS)]
+
+
+def test_an_unreadable_invoice_shows_the_root_cause_not_a_wall_of_consequences() -> None:
+    d = decide([], None, None, POLICY, [Reason(LLM_UNAVAILABLE, "model is down")])
+    assert d.decision is Decision.NEEDS_REVIEW
+    assert [r.code for r in d.reasons] == [LLM_UNAVAILABLE]
+
+
+def test_root_cause_filtering_never_hides_a_real_failed_check() -> None:
+    failing = [replace(r, passed=False) if r.name is CheckName.ARITHMETIC else r for r in run()]
+    d = decide(failing, D("2300"), 1.0, POLICY, [Reason(LLM_UNAVAILABLE, "model is down")])
+    assert {r.code for r in d.reasons} == {str(CheckName.ARITHMETIC), LLM_UNAVAILABLE}
 
 
 def test_forced_review_reasons_block_approval_and_are_listed() -> None:

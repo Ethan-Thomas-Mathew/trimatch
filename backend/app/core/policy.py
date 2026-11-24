@@ -33,6 +33,9 @@ LLM_UNAVAILABLE = "llm_unavailable"
 
 _REJECTING_CHECKS = {CheckName.EXACT_DUPLICATE, CheckName.GSTIN_FORMAT}
 
+# Reasons that mean the invoice was never read; they explain every "not run"/"unknown" below.
+_ROOT_CAUSES = {EXTRACTION_FAILED, LLM_UNAVAILABLE, "extraction_incomplete"}
+
 # A check the engine skips when one of these failed first (so the skip is already explained).
 _PREREQUISITES: dict[CheckName, set[CheckName]] = {
     CheckName.PO_VENDOR_MATCH: {CheckName.PO_EXISTS},
@@ -121,7 +124,18 @@ def decide(
             )
         )
 
-    reasons.extend(forced_review)
+    forced = list(forced_review)
+    if any(f.code in _ROOT_CAUSES for f in forced):
+        # The invoice could not be read at all, so "check X was not run", "total unknown" and
+        # "confidence unknown" are only consequences. Showing just the root cause keeps the
+        # explanation readable. Approval stays blocked: the forced reason itself is a reason.
+        reasons = [
+            r
+            for r in reasons
+            if not r.code.startswith(CHECK_NOT_RUN)
+            and r.code not in {TOTAL_UNKNOWN, CONFIDENCE_UNKNOWN}
+        ]
+    reasons.extend(forced)
 
     if reject:
         return PolicyDecision(Decision.REJECT, tuple(reasons))
