@@ -22,8 +22,9 @@ Upload PDF -> Extraction -> InvoiceExtraction (per-field confidence)
 | Path | Responsibility | Phase |
 |---|---|---|
 | `backend/app/config.py` | Typed settings from environment | 0 |
-| `backend/app/core/matching/` | Pure rule functions returning `CheckResult` | 3 |
-| `backend/app/core/policy.py` | Combines check results into a decision | 3 |
+| `backend/app/core/matching/` | Pure rule functions returning `CheckResult`: validation, matching, duplicates, engine | 3 |
+| `backend/app/core/policy.py` | Combines check results into a decision; fails closed | 3 |
+| `backend/app/matching_config.py` | Builds core config from settings (kept out of `core/`) | 3 |
 | `backend/app/extraction/` | PDF to `InvoiceExtraction`: pdf reading, prompts, service, scoring, persistence | 2 |
 | `backend/app/llm/` | `LLMProvider` interface; Ollama (local), record and replay providers | 2 |
 | `backend/app/agent/` | Agent loop, tools, prompts | 4 |
@@ -54,5 +55,22 @@ PDF bytes --> pdfplumber text --(enough text?)--> text model  --+
 ```
 
 The model only ever returns the fixed `InvoiceExtraction` shape (value + confidence per field). It has no decision field and no tools. `LLMProvider` is the only seam to a model, so Ollama, replay fixtures, or any future provider are interchangeable. Defaults to local Ollama on `127.0.0.1`; a non-local host is refused unless `ALLOW_REMOTE_LLM=true`.
+
+## Decision flow (Phase 3)
+
+```
+MatchInputs (invoice, vendor, PO, received qty, already-invoiced qty, prior invoices)
+      |
+      v
+run_three_way_match  -- 11 checks; PO-dependent ones only if the PO is trustworthy
+      |
+      v
+decide(results, total, min confidence, config)
+      |-- exact duplicate / malformed GSTIN (conclusive) --> REJECT
+      |-- any failed, inconclusive or missing check, over limit, low or unknown confidence --> NEEDS_REVIEW
+      '-- everything passed, within limit, confident --> AUTO_APPROVE
+```
+
+`app/core/` imports nothing but the standard library and shared enums: no database, settings, HTTP or LLM. Mypy runs in strict mode on it.
 
 This document is extended as each phase lands.

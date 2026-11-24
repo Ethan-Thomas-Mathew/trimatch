@@ -75,3 +75,27 @@ There is also no API key anywhere: the model runs locally, so there is nothing t
 - **Field accuracy**: the share of extracted fields that exactly match the answer key (numbers within 0.01).
 - **IPv4 vs IPv6 loopback**: `127.0.0.1` and `::1` are two different "this machine" addresses. Using `localhost` can silently try the wrong one first.
 
+
+## Phase 3: Matching and policy engine
+
+### What was built
+The part that actually decides. It lives in `app/core/` and is plain Python with no database, no model and no internet:
+- **11 checks** (GSTIN format, GSTIN matches the vendor, tax type, arithmetic, PO exists, PO belongs to the vendor, unit price, quantity, line coverage, exact duplicate, possible duplicate). Each returns a `CheckResult` saying whether it passed, what was expected, what was found and a plain-English message.
+- **The policy** turns the results into `AUTO_APPROVE`, `NEEDS_REVIEW` or `REJECT`, with a reason for each problem.
+- **176 tests**, 99.5% branch coverage of `core/`, plus a test that runs all 100 dataset invoices through it.
+
+### Why it was built this way
+This is the "code decides" half of "the LLM reads, code decides". Money decisions must be exact and repeatable, and they must not be influenceable by anything written in an invoice. Because these functions take only numbers and text we give them, nothing in a PDF can change how they behave.
+The design leans cautious everywhere: if something is missing or cannot be checked, the invoice goes to a human, never through.
+
+### Concepts to understand
+- **Pure function**: same inputs always give the same output, and it touches nothing outside itself (no database, files or network). Easy to test, impossible to surprise you.
+- **Three-way match**: PO (ordered) vs goods receipt (received) vs invoice (billed). Quantities and prices must line up within tolerance.
+- **Tolerance**: an allowed small difference (1% on price, ₹1 on totals) so rounding does not cause false alarms. Boundaries are tested: exactly 1% passes, 1.01% fails.
+- **Fail closed**: when unsure, take the safe action. Here, unsure means "ask a human", never "approve".
+- **Inconclusive vs failed**: "I checked and found a problem" and "I could not check" are different. Only the first can cause a REJECT.
+- **Precedence**: REJECT beats NEEDS_REVIEW beats AUTO_APPROVE, so a duplicate is rejected even if the amount is also over the limit.
+- **Branch coverage**: the percentage of code paths (both sides of every `if`) that tests exercise. 99.5% here, against a 90% target.
+- **Property-style test**: instead of one example, test a rule that must hold for every case. Here: break each check in turn, and approval must become impossible.
+- **False approval rate**: how often something that should not be approved is approved. The most important safety number; it is 0 on the dataset.
+- **Frozen dataclass**: a Python object that cannot be changed after creation, so checks cannot alter their inputs.

@@ -98,3 +98,27 @@ Each entry: **Decision → Alternatives considered → Why this one → Trade-of
 - **Why:** A number from a parser written by the same person who wrote the generator would be near 100% and say nothing about real invoices. Reporting no number is more honest than reporting a flattering one.
 - **Trade-off:** The extraction half of the pipeline stays unproven until Ollama (or another provider) is run with `scripts/run_extraction.py`. The matching and policy phases do not depend on it and are verified with perfect extractions from the answer key.
 
+
+## D-017: The core fails closed, and "could not check" is not "found a problem"
+- **Decision:** A check whose inputs are missing returns `passed=False, inconclusive=True`. The policy only REJECTs on conclusive findings (a duplicate was found, a GSTIN is present but malformed). Inconclusive and not-run checks block approval and send the invoice to a human. The policy also requires every one of the 11 checks to be present before it will approve.
+- **Alternatives:** Treat unevaluable checks as passed; treat them as the failure they would have been (REJECT).
+- **Why:** Approving on missing evidence is the dangerous direction, but rejecting on missing evidence is wrong too: an unknown vendor is not a duplicate. A unit test caught exactly this bug (an unknown vendor produced REJECT) before it shipped.
+- **Trade-off:** More invoices reach human review when extraction or lookups are incomplete. That is deliberate.
+
+## D-018: PO-dependent checks only run against a trustworthy PO
+- **Decision:** Line coverage, price and quantity checks run only if the PO exists and belongs to the invoicing vendor. Otherwise they are skipped, and the policy explains the skip by the failed prerequisite instead of listing each as "not run".
+- **Alternatives:** Match against whatever PO the invoice quotes.
+- **Why:** Matching an invoice against another vendor's PO yields a pile of misleading price and quantity failures that bury the real problem (wrong PO).
+- **Trade-off:** A reviewer sees one clear reason instead of four noisy ones; the skipped checks still block approval.
+
+## D-019: An invoice with no GST at all fails the tax-type check
+- **Decision:** CGST = SGST = IGST = 0 is a failure ("tax type cannot be verified"), not a pass.
+- **Alternatives:** Treat zero tax as valid for exempt goods.
+- **Why:** The tax-type rule cannot be verified without a tax amount, and silently passing it would let a missing-tax invoice through. Genuinely exempt supplies are rare and cheap for a human to confirm.
+- **Trade-off:** Exempt-goods invoices always go to review. A known limitation, to be listed in the README.
+
+## D-020: Rules are verified against the dataset with a perfect extraction
+- **Decision:** `test_dataset_decisions.py` feeds the answer key (as if extracted perfectly) and the seeded PO/GRN/history through the real engine and policy for all 100 invoices.
+- **Alternatives:** Only unit-test rules in isolation.
+- **Why:** It checks the deterministic half of the system end to end, independent of any model: every decision equals its label, the false-approval rate is 0, all 5 injection invoices are not approved, and the failed checks equal the labelled ones.
+- **Trade-off:** It says nothing about extraction quality, which is measured separately (and is still unmeasured, D-016).

@@ -40,4 +40,4 @@ jobs:
       - name: Type-check
         run: uv run mypy app
       - name: Tests
-        run: uv run pytest
+        run: uv run pytest --cov=app/core --cov-branch --cov-fail-under=90

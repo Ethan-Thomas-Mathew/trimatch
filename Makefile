@@ -9,7 +9,7 @@ down:
 	docker compose down
 
 test:
-	cd backend && $(UV) run python -m pytest
+	cd backend && $(UV) run python -m pytest --cov=app/core --cov-branch --cov-fail-under=90
 
 lint:
 	cd backend && $(UV) run ruff check .. && $(UV) run ruff format --check ..
