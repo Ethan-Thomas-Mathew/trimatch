@@ -1,0 +1,51 @@
+name: trimatch
+
+services:
+  postgres:
+    image: postgres:16
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-trimatch}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-trimatch}
+      POSTGRES_DB: ${POSTGRES_DB:-trimatch}
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-trimatch} -d ${POSTGRES_DB:-trimatch}"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  # Langfuse v2 needs only Postgres, which keeps self-hosting light (see docs/DECISIONS.md D-003).
+  langfuse-db:
+    image: postgres:16
+    environment:
+      POSTGRES_USER: langfuse
+      POSTGRES_PASSWORD: ${LANGFUSE_DB_PASSWORD:-langfuse}
+      POSTGRES_DB: langfuse
+    volumes:
+      - langfuse_pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U langfuse -d langfuse"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  langfuse:
+    image: langfuse/langfuse:2
+    depends_on:
+      langfuse-db:
+        condition: service_healthy
+    ports:
+      - "3000:3000"
+    environment:
+      DATABASE_URL: postgresql://langfuse:${LANGFUSE_DB_PASSWORD:-langfuse}@langfuse-db:5432/langfuse
+      NEXTAUTH_URL: http://localhost:3000
+      NEXTAUTH_SECRET: ${LANGFUSE_NEXTAUTH_SECRET:-change-me-local-only}
+      SALT: ${LANGFUSE_SALT:-change-me-local-only}
+      TELEMETRY_ENABLED: "false"
+
+volumes:
+  pgdata:
+  langfuse_pgdata:
