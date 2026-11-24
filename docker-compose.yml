@@ -46,6 +46,45 @@ services:
       SALT: ${LANGFUSE_SALT:-change-me-local-only}
       TELEMETRY_ENABLED: "false"
 
+  # ---- The application (profile "app"):  docker compose --profile app up --build ----------------
+  backend:
+    profiles: ["app"]
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-trimatch}:${POSTGRES_PASSWORD:-trimatch}@postgres:5432/${POSTGRES_DB:-trimatch}
+      LLM_PROVIDER: ollama
+      # Ollama runs on the host machine, which is "this machine" even though it is not loopback
+      # from inside the container, so the remote-host guard must be told explicitly.
+      OLLAMA_HOST: ${OLLAMA_HOST_FOR_DOCKER:-http://host.docker.internal:11434}
+      ALLOW_REMOTE_LLM: "true"
+      OLLAMA_TEXT_MODEL: ${OLLAMA_TEXT_MODEL:-qwen2.5:7b}
+      OLLAMA_VISION_MODEL: ${OLLAMA_VISION_MODEL:-qwen2.5vl:7b}
+      # Empty = a random password is generated and printed once in `docker compose logs backend`.
+      REVIEWER_PASSWORD: ${REVIEWER_PASSWORD:-}
+      CORS_ORIGINS: http://127.0.0.1:8080,http://localhost:8080
+      SEED_DEMO_DATA: ${SEED_DEMO_DATA:-true}
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    volumes:
+      - uploads:/data/uploads
+    # No published port: the browser reaches the API only through the frontend's /api proxy.
+
+  frontend:
+    profiles: ["app"]
+    build:
+      context: ./frontend
+    depends_on:
+      backend:
+        condition: service_healthy
+    ports:
+      - "127.0.0.1:8080:8080"
+
 volumes:
   pgdata:
   langfuse_pgdata:
+  uploads:

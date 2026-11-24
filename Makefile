@@ -1,4 +1,4 @@
-.PHONY: up down test lint fmt typecheck eval eval-sim seed migrate dataset
+.PHONY: up down app test lint fmt typecheck eval eval-sim seed migrate dataset
 
 UV ?= uv
 
@@ -6,7 +6,11 @@ up:
 	docker compose up -d --wait
 
 down:
-	docker compose down
+	docker compose --profile app down
+
+# The whole application (Postgres, API, UI): http://127.0.0.1:8080
+app:
+	docker compose --profile app up --build
 
 test:
 	cd backend && $(UV) run python -m pytest --cov=app/core --cov-branch --cov-fail-under=90
