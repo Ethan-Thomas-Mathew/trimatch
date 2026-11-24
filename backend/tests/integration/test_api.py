@@ -170,7 +170,9 @@ def test_a_pipeline_crash_leaves_a_reviewable_failed_invoice(client: TestClient,
 
 
 # ------------------------------------------------------------ list / detail
-def test_list_filters_by_status_and_paginates(client: TestClient) -> None:
+def test_list_filters_by_status_and_paginates(client: TestClient, env: Env) -> None:
+    for scenario in ("price_mismatch", "qty_over_billed", "gst_arithmetic"):
+        _needs_review(client, env, scenario)
     everything = client.get("/invoices?limit=200", auth=AUTH).json()
     assert everything["total"] == len(everything["items"]) >= 4
     review = client.get("/invoices?status=NEEDS_REVIEW", auth=AUTH).json()
@@ -324,7 +326,14 @@ def test_review_of_an_unknown_invoice_is_404(client: TestClient) -> None:
 
 
 # ----------------------------------------------------------------- metrics
-def test_metrics_add_up(client: TestClient) -> None:
+def test_metrics_add_up(client: TestClient, env: Env) -> None:
+    invoice_id = _needs_review(client, env, "gst_wrong_tax_type")
+    approved = client.post(
+        f"/invoices/{invoice_id}/review",
+        json={"action": "approve", "comment": "Checked with the supplier."},
+        auth=AUTH,
+    )
+    assert approved.status_code == 200
     m = client.get("/metrics", auth=AUTH).json()
     listing = client.get("/invoices?limit=200", auth=AUTH).json()
     assert m["invoices"] == listing["total"]
