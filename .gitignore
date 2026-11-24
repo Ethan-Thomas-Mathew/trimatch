@@ -13,3 +13,4 @@ dist/
 uploads/
 # Generated dataset (reproducible via scripts/generate_dataset.py)
 data/
+*.tsbuildinfo
