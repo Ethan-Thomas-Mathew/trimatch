@@ -16,6 +16,9 @@ async function send(path: string, init: RequestInit = {}): Promise<Response> {
   const headers = new Headers(init.headers);
   const auth = getAuthHeader();
   if (auth) headers.set("Authorization", auth);
+  // Tells the API this is our UI, so a wrong password gets a plain 401 and the browser does not
+  // open its own native "Sign in to access this site" box over the app's sign-in form.
+  headers.set("X-Requested-With", "TriMatch-UI");
   let response: Response;
   try {
     response = await fetch(BASE + path, { ...init, headers });

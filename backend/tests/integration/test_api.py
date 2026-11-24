@@ -63,6 +63,22 @@ def test_wrong_credentials_are_refused_without_saying_which_part_was_wrong(
         assert "Basic" in r.headers["www-authenticate"]
 
 
+def test_the_web_ui_never_triggers_the_browsers_native_login_box(client: TestClient) -> None:
+    """Regression: a wrong password made the browser pop up its own 'Sign in' dialog."""
+    ui = {"X-Requested-With": "TriMatch-UI"}
+    for creds in (None, ("reviewer", "wrong")):
+        r = client.get("/invoices", auth=creds, headers=ui)
+        assert r.status_code == 401
+        assert "www-authenticate" not in r.headers
+        assert r.json() == {"detail": "Invalid credentials."}
+    # A plain API client still receives the standard challenge.
+    plain = client.get("/invoices")
+    assert plain.status_code == 401
+    assert plain.headers["www-authenticate"].startswith("Basic")
+    # And the UI marker does not bypass authentication.
+    assert client.get("/invoices", headers=ui, auth=AUTH).status_code == 200
+
+
 def test_security_headers_and_request_id(client: TestClient) -> None:
     r = client.get("/health")
     assert r.headers["x-content-type-options"] == "nosniff"
