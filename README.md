@@ -2,7 +2,7 @@
 
 TriMatch handles supplier invoices the way an accounts-payable team does. It extracts the invoice data from a PDF, fetches the matching purchase order and goods receipts, performs a deterministic three-way match, and returns `AUTO_APPROVE`, `NEEDS_REVIEW` or `REJECT` with a plain-English explanation. It is built for finance teams that process hundreds of invoices a month.
 
-> **Status:** Phase 2 (extraction) complete. The full README (demo, eval results, safety design) is written in Phase 7. See `docs/` for architecture, decisions and learning notes.
+> **Status:** Phase 2 (extraction) is built and tested with fake models, but **not yet measured against a real model**: the plan's "first field-accuracy number" does not exist until a local model is run (see below). The full README (demo, eval results, safety design) is written in Phase 7. See `docs/` for architecture, decisions and learning notes.
 
 ## No API keys, by design
 The language model runs **locally** (Ollama) and invoice data never leaves your machine. There is no API-key setting anywhere in the project, so there is nothing to leak. Tests and CI use recorded replays and need no model at all. See `docs/DECISIONS.md` D-011.

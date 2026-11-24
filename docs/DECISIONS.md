@@ -91,3 +91,10 @@ Each entry: **Decision → Alternatives considered → Why this one → Trade-of
 - **Alternatives:** `localhost`; publish the container ports on all interfaces.
 - **Why:** Ports are published on IPv4 loopback only (safer). On Windows `localhost` resolves to IPv6 `::1` first, which has no listener, and each connection waited 5 s for it to time out. The test suite went from 17 s to unusably slow until this was found.
 - **Trade-off:** None.
+
+## D-016: Phase 2 acceptance is only partly met (no model run yet)
+- **Decision:** Phase 2 is recorded as "built and tested, accuracy unmeasured". The plan's criterion "a first field-accuracy number is produced" is NOT met, because no local model has been run.
+- **Alternatives:** Declare it done; write a regex extractor tuned to our own invoice layouts and report its score.
+- **Why:** A number from a parser written by the same person who wrote the generator would be near 100% and say nothing about real invoices. Reporting no number is more honest than reporting a flattering one.
+- **Trade-off:** The extraction half of the pipeline stays unproven until Ollama (or another provider) is run with `scripts/run_extraction.py`. The matching and policy phases do not depend on it and are verified with perfect extractions from the answer key.
+
