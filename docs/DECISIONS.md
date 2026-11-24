@@ -122,3 +122,51 @@ Each entry: **Decision → Alternatives considered → Why this one → Trade-of
 - **Alternatives:** Only unit-test rules in isolation.
 - **Why:** It checks the deterministic half of the system end to end, independent of any model: every decision equals its label, the false-approval rate is 0, all 5 injection invoices are not approved, and the failed checks equal the labelled ones.
 - **Trade-off:** It says nothing about extraction quality, which is measured separately (and is still unmeasured, D-016).
+
+## D-021: The agent speaks JSON actions, not provider-native tool calling
+- **Decision:** Each agent turn returns one JSON action (`call_tool` with a tool name and arguments, or `finish`), constrained by a JSON Schema and validated with Pydantic. The loop is hand-written.
+- **Alternatives:** Native tool calling in a provider SDK (the original plan); a framework such as LangChain.
+- **Why:** The same loop works with any `LLMProvider` (a local model, recorded replays, a test double) and its transcripts can be replayed deterministically. The plan's "no LangChain, write the loop ourselves so every step can be explained" is kept. Native tool calling can be added behind the provider interface later.
+- **Trade-off:** Small local models can be less reliable at emitting this shape than at native tool calls. Mitigated by constrained decoding, validation, a structured error fed back to the model, and the hard 8-call limit.
+
+## D-022: Traces go to `audit_log`, not Langfuse (plan item not met)
+- **Decision:** A `Tracer` interface records every LLM and tool call (model, tokens, latency, arguments) as `audit_log` rows, shown in the review UI. A Langfuse exporter is **not** implemented.
+- **Alternatives:** Integrate the Langfuse SDK with local keys.
+- **Why:** Langfuse needs public and secret keys, which conflicts with the decision to keep secrets out of the project (D-011), and it needs a running Langfuse to verify against. The audit log already satisfies "every action is audit-logged" and is visible to reviewers.
+- **Trade-off:** No Langfuse dashboards. The plan's "every LLM call traced in Langfuse" is only partly met; the Langfuse container remains in compose, unused.
+
+## D-023: A simulated model (the "oracle") tests the pipeline, and is never reported as a result
+- **Decision:** `evals/oracle.py` answers extraction perfectly from the answer key and walks the agent through a sensible tool sequence; `hostile=True` makes it behave like a fully manipulated model. Eval reports from it are written to `report.oracle.md`, carry a banner, and mark field accuracy "n/a (simulated)".
+- **Alternatives:** Record real model output as CI fixtures (impossible without a model); skip end-to-end tests.
+- **Why:** It exercises the database, tools, rules, policy and API end to end, and proves the safety properties against an adversarial model, without needing a language model.
+- **Trade-off:** It measures nothing about model quality. The README and reports say so explicitly, and `evals/report.md` is reserved for a real run.
+
+## D-024: Single reviewer, HTTP Basic auth, random password by default
+- **Decision:** One demo reviewer. If `REVIEWER_PASSWORD` is unset, a random password is generated at start-up and logged once. Constant-time comparison; one generic error for any bad credential.
+- **Alternatives:** A built-in default password; sessions with a login endpoint; an auth provider.
+- **Why:** The plan scopes auth to a single demo login. There is no default password to leak, and Basic auth is stateless and trivially testable.
+- **Trade-off:** Basic auth over plain HTTP is only appropriate on localhost; a network deployment needs TLS (docs/DEPLOY.md). The generated password appears in the backend log, which is acceptable locally and must not be shipped as-is.
+
+## D-025: A human approval is stored as `APPROVE`, with `decided_by=human`
+- **Decision:** Migration 0002 widens the `decisions.decision` check to include `APPROVE`. A reviewer's approval writes `APPROVE`; a rejection writes `REJECT`. The policy's own values are unchanged and policy rows are never edited, so the history shows both the system's decision and the human's.
+- **Alternatives:** Reuse `AUTO_APPROVE` for human approvals (misleading); overwrite the policy row.
+- **Why:** Honest labelling and an append-only decision history.
+- **Trade-off:** A small deviation from the three values in the plan's data model.
+
+## D-026: Reviewing is limited to invoices that need review
+- **Decision:** Only `NEEDS_REVIEW` and `FAILED` invoices can be reviewed (409 otherwise); a row lock prevents double reviews. A policy REJECT (duplicate, malformed GSTIN) cannot be approved by a human through the API.
+- **Alternatives:** Let a reviewer override anything.
+- **Why:** The policy's REJECT cases are the ones where approving risks paying twice or paying a non-existent supplier; those need a separate, deliberate process.
+- **Trade-off:** A genuinely wrong rejection needs the invoice to be re-submitted or handled outside the tool.
+
+## D-027: Frontend toolchain chosen to keep `npm audit` at zero
+- **Decision:** React 18, React Router 7, Vite 6, Tailwind 3, no UI test framework; helper logic is tested with Node's built-in runner (`node --test`, type-stripping).
+- **Alternatives:** Vitest (its dependency chain carried a critical advisory in `tinypool`); React Router 6 (advisories fixed only in 7).
+- **Why:** Zero known vulnerabilities across runtime and dev tooling, and fewer dependencies to maintain. CI runs `npm audit` and fails on any finding.
+- **Trade-off:** No component or browser tests. The UI is type-checked and built in CI, and the API it calls is covered by integration tests; the rendered UI has not been exercised in a browser.
+
+## D-028: Docker, with the browser reaching only one origin
+- **Decision:** `docker compose --profile app up --build` runs Postgres, the API and an nginx that serves the built UI and proxies `/api` to the backend. The backend publishes no port; the UI port is bound to `127.0.0.1`; both images run as non-root; nginx sets a strict Content-Security-Policy (`frame-src blob:` for the PDF viewer).
+- **Alternatives:** Publish the API directly with CORS.
+- **Why:** One origin means no CORS surface and credentials never cross sites.
+- **Trade-off:** The container reaches the host's Ollama through `host.docker.internal`, which is not loopback, so the container sets `ALLOW_REMOTE_LLM=true`. That is deliberate and documented: the host is this machine.

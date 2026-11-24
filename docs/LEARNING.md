@@ -99,3 +99,70 @@ The design leans cautious everywhere: if something is missing or cannot be check
 - **Property-style test**: instead of one example, test a rule that must hold for every case. Here: break each check in turn, and approval must become impossible.
 - **False approval rate**: how often something that should not be approved is approved. The most important safety number; it is 0 on the dataset.
 - **Frozen dataclass**: a Python object that cannot be changed after creation, so checks cannot alter their inputs.
+
+## Phase 4: The agent
+
+### What was built
+A small program that, for each invoice, asks the model what to look up next, runs that lookup, shows the result back to the model, and repeats until the model says it is done (or a limit is hit). The lookups ("tools") are: find the vendor, get the purchase order, get the goods receipts, get what was already billed, check for duplicates, and run the three-way match. The model then writes a plain-English explanation. A pipeline wraps it all: upload, read the PDF, run the agent, run the rules, apply the policy, save everything.
+
+### Why it was built this way
+The model is allowed to choose and to talk, never to decide. The rules engine is fed from the database, not from what the model says, so a model that is wrong or tricked cannot change a result. If the model fails at any point, the invoice simply goes to a human.
+
+### Concepts to understand
+- **Agent loop**: ask the model for an action, perform it, give the result back, repeat. We wrote it by hand so each step is explainable.
+- **Tool**: a function the model may ask us to run. Ours only read data.
+- **Read-only transaction**: a database setting that makes Postgres refuse any write. Tools run inside one, so even a bug could not change data.
+- **Step limit**: a cap (8) on tool calls so a confused model cannot loop forever.
+- **Structured error**: when the model calls a tool wrongly, we send back a clear message instead of crashing, and let it correct itself.
+- **Defence in depth**: several independent protections (untrusted-text wrapper, schema with no decision field, no approve tool, rules fed from the database) so one failing does not break safety.
+- **Fail closed**: if anything goes wrong, take the cautious action (human review).
+- **Simulated model ("oracle")**: a fake model for tests. It lets us prove the system works, and that a hijacked model is harmless, without needing a real model.
+- **Audit trail**: a permanent record of each step (what ran, with what, how long), shown to reviewers.
+
+## Phase 5: Evaluation
+
+### What was built
+A harness that creates a throwaway database, runs all 100 invoices through the real pipeline, and reports field accuracy, decision accuracy, false approvals, injection resistance, review rate, cost, latency, a confusion matrix and a list of failures.
+
+### Why it was built this way
+"It works" is not evidence; numbers against an answer key are. The harness refuses to dress up a simulation as a result: simulated runs are banner-labelled and their field-accuracy rows say "n/a (simulated)".
+
+### Concepts to understand
+- **Confusion matrix**: a table of expected versus actual decisions; the off-diagonal cells are the mistakes.
+- **False approval rate**: approvals that should not have happened. The number that matters most.
+- **p50 / p95 latency**: the typical time, and the time 95% of invoices beat.
+- **Simulation versus measurement**: a test double proves the plumbing; only the real component measures quality.
+- **Reproducible evaluation**: a fixed seed and a fresh database mean two runs give the same answer.
+
+## Phase 6: API and review UI
+
+### What was built
+Endpoints to upload an invoice (it returns immediately and processes in the background), list and filter invoices, view one with its checks and trace, approve or reject with a mandatory comment, and see metrics. A React interface with an inbox, a detail page (PDF on the left; extracted fields with confidence and failed checks on the right) and a metrics page.
+
+### Why it was built this way
+The reviewer must see what the system saw: the original PDF next to what was extracted, and exactly which check failed with expected versus actual. Every human action is saved in `review_actions` and `audit_log`.
+
+### Concepts to understand
+- **Background task**: work that continues after the HTTP response, so upload feels instant.
+- **HTTP status codes used here**: 202 accepted, 401 not signed in, 409 conflict (already reviewed), 413 too large, 415 wrong type, 422 invalid input.
+- **Basic auth and constant-time comparison**: a simple login, compared in a way that does not leak how many characters matched.
+- **Row lock (`SELECT ... FOR UPDATE`)**: stops two reviewers from deciding the same invoice at once.
+- **CORS**: browser rules about which websites may call an API. Serving the UI and API from one origin avoids needing it.
+- **Blob URL**: a temporary in-browser address for downloaded bytes, used so the PDF can be shown even though it needs a login header.
+- **Content-Security-Policy**: a header telling the browser what a page may load, limiting the damage if something malicious got in.
+
+## Phase 7: Hardening and shipping
+
+### What was built
+Structured JSON logs with a request id, `/health` and `/ready`, upload limits with tests, Dockerfiles for the API and UI, one-command start-up, CI that also builds the UI and the images and audits npm, and the full README.
+
+### Why it was built this way
+Operability and safety are features: logs a machine can search, health checks an orchestrator can use, containers that do not run as root, and no secrets in the repository.
+
+### Concepts to understand
+- **Structured logging**: one JSON object per line, so logs can be filtered and counted by tools.
+- **Liveness vs readiness**: "the process is up" versus "it can do its job (the database answers)".
+- **Multi-stage Docker build**: build in one image, ship only the result in a small one.
+- **Non-root container**: the app runs without administrator rights inside the container.
+- **Dependency audit**: checking packages against a database of known vulnerabilities (we hold at zero).
+- **Honest reporting**: documenting what was not done (no real-model run, no live demo, no Langfuse) is part of the work.
