@@ -49,8 +49,18 @@ class Settings(BaseSettings):
     arithmetic_tolerance: Decimal = Decimal("1")
     duplicate_window_days: int = 30
 
+    # --- Buyer (the company receiving the invoices; Karnataka in the synthetic dataset) ---
+    buyer_state_code: str = "29"
+
     # --- Uploads ---
     max_upload_mb: int = 10
+    upload_dir: str = "../data/uploads"
+
+    # --- API ---
+    reviewer_username: str = "reviewer"
+    # Empty means "generate a random password at startup and log it once" (secure by default).
+    reviewer_password: str = ""
+    cors_origins: str = "http://127.0.0.1:5173,http://localhost:5173"
 
     # --- Langfuse tracing ---
     langfuse_host: str = "http://127.0.0.1:3000"

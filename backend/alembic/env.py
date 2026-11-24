@@ -10,7 +10,8 @@ from app.db.models import Base
 
 config = context.config
 if config.config_file_name is not None:
-    fileConfig(config.config_file_name)
+    # Do not silence loggers that already exist (the application's own) when migrating in-process.
+    fileConfig(config.config_file_name, disable_existing_loggers=False)
 
 # An explicit sqlalchemy.url (e.g. set by tests) wins over the environment.
 if not config.get_main_option("sqlalchemy.url"):
