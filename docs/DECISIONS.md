@@ -61,3 +61,33 @@ Each entry: **Decision → Alternatives considered → Why this one → Trade-of
 - **Alternatives:** Tests against the dev database; SQLite; mocking the database.
 - **Why:** It exercises the real migration and Postgres-specific features (JSONB, check constraints) without touching dev data. CI provides Postgres as a service; an unreachable database fails CI but only skips locally.
 - **Trade-off:** Needs Docker locally to run these tests.
+
+## D-011: Local LLM only, no API keys anywhere (deviates from the plan's "Anthropic SDK")
+- **Decision:** The project has no API-key setting and no hosted-LLM dependency. Extraction talks to a local Ollama server (`LLM_PROVIDER=ollama`) or replays recorded answers (`LLM_PROVIDER=replay`). The `anthropic` package was removed.
+- **Alternatives:** Anthropic SDK with a spend-capped key (the original plan); a provider interface with Claude as one option.
+- **Why:** The goal was the safest possible setup for a public repository: with no key there is nothing to leak, no bill to run up, and invoice data never leaves the machine. The `LLMProvider` interface keeps the door open: adding a hosted provider later is one new file, with no change to extraction code.
+- **Trade-off:** Local 7B models are less accurate than frontier hosted models, especially on scans, so the plan's accuracy targets (95% digital, 85% scanned) may be missed. Real numbers will be reported either way. The "built on Claude" talking point is replaced by "model-agnostic design".
+
+## D-012: A remote LLM host is refused unless explicitly allowed
+- **Decision:** Settings validation fails if `OLLAMA_HOST` is not loopback, unless `ALLOW_REMOTE_LLM=true`.
+- **Alternatives:** Trust whatever URL is configured.
+- **Why:** A typo or a stray environment variable must not send invoice contents (vendor names, GSTINs, amounts) to another machine.
+- **Trade-off:** One extra setting for people who really do run Ollama on another host.
+
+## D-013: Per-field confidence is self-reported by the model
+- **Decision:** Every scalar field is `Scored[T]` = `{value, confidence}`; the model reports the confidence in the same JSON object. The policy engine will compare the lowest one to `MIN_CONFIDENCE`.
+- **Alternatives:** Token log-probabilities; a second "verifier" pass; no confidence.
+- **Why:** It is the only approach that works uniformly for text and vision models, and it costs no extra call.
+- **Trade-off:** Self-reported confidence is poorly calibrated, especially on small models. It is a weak signal, which is why approval also requires every deterministic check to pass. Phase 5 will measure how well confidence predicts errors, and report it honestly.
+
+## D-014: Model output is constrained, validated, and never repaired silently
+- **Decision:** The model is given a flat JSON Schema (constrained decoding). The reply is parsed into Pydantic with `extra="forbid"`. If it fails, it is retried exactly once with the error shown; a second failure raises `ExtractionFailedError`, which later sends the invoice to a human.
+- **Alternatives:** Best-effort regex repair; unlimited retries.
+- **Why:** A guess that looks valid is worse than a clear failure when money is involved. The schema has no decision, approval or instruction field, so a prompt injection has nothing to act through (defence by design, layered on the untrusted-data prompt wrapper).
+- **Trade-off:** Some invoices fail extraction that a lenient parser would have passed. They go to review, which is the safe direction.
+
+## D-015: `127.0.0.1` instead of `localhost` for local services
+- **Decision:** Default database and Langfuse URLs use `127.0.0.1`.
+- **Alternatives:** `localhost`; publish the container ports on all interfaces.
+- **Why:** Ports are published on IPv4 loopback only (safer). On Windows `localhost` resolves to IPv6 `::1` first, which has no listener, and each connection waited 5 s for it to time out. The test suite went from 17 s to unusably slow until this was found.
+- **Trade-off:** None.

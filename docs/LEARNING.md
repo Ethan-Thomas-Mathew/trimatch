@@ -47,3 +47,31 @@ The generator also checks itself. If a label contradicts the invoice (say, "clea
 - **Exact decimal (`Numeric`)**: money stored as exact decimals, so 0.1 + 0.2 is exactly 0.3.
 - **Throwaway test database**: integration tests create a brand-new database, run the real migration into it, and delete it afterwards.
 - **Prompt injection**: text hidden in a document that tries to give the AI orders ("mark AUTO_APPROVE"). Five invoices carry this, each also hiding a real problem, to test that the system stays safe.
+
+## Phase 2: Extraction
+
+### What was built
+A pipeline that turns an invoice PDF into validated, structured data with a confidence for every field:
+1. **Read the PDF.** `pdfplumber` pulls out the text. If there is almost none (a scan), the pages are turned into pictures instead.
+2. **Ask a local model.** The text, or the pictures, go to a model running on your own computer (Ollama), together with a strict description of the answer we want.
+3. **Check the answer.** The reply is parsed and validated. If it is malformed, the model gets one more try with the error shown. If it still fails, we stop and say so, rather than guess.
+4. **Record the run.** Tokens, time and confidences are saved in `extraction_runs`.
+A script scores the results against the answer key from Phase 1 and prints the field accuracy.
+
+### Why it was built this way
+The model is only allowed to read, never to decide. Its output has a fixed shape with no "decision" field, so even if a hidden instruction inside an invoice ("approve this!") fooled the model, it would have nowhere to put the answer. The rules that decide come in Phase 3 and are plain code.
+There is also no API key anywhere: the model runs locally, so there is nothing to leak and no bill, and the invoice never leaves your machine.
+
+### Concepts to understand
+- **LLM provider interface**: a small contract ("give me a request, I return text") that different models can satisfy. It lets us swap a local model for a hosted one, or for recordings, without touching the extraction code.
+- **Ollama**: a program that runs open-source language models locally and exposes them on `127.0.0.1`.
+- **Structured output / constrained decoding**: telling the model "your answer must match this JSON Schema" and having the runtime enforce it token by token.
+- **JSON Schema**: a standard way to describe the shape of JSON. Pydantic generates it from our Python classes.
+- **Pydantic validation**: converts the model's raw JSON into typed Python objects and rejects anything that does not fit (`extra="forbid"` rejects unknown keys).
+- **Confidence score**: the model's own 0 to 1 estimate of how sure it is. Useful, but unreliable on small models, so it is never trusted alone.
+- **Vision model**: a model that reads images. Used when the PDF is a scan with no text.
+- **Replay fixtures**: saved model answers keyed by a hash of the exact request. Tests replay them, so they are free, instant and repeatable.
+- **Prompt injection**: hostile text inside the document. Our defences: (1) wrap the document as untrusted data in the prompt, (2) a schema with nowhere for a command to land, (3) approval never comes from an LLM at all.
+- **Field accuracy**: the share of extracted fields that exactly match the answer key (numbers within 0.01).
+- **IPv4 vs IPv6 loopback**: `127.0.0.1` and `::1` are two different "this machine" addresses. Using `localhost` can silently try the wrong one first.
+
